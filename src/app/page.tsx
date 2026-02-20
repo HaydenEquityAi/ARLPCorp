@@ -21,11 +21,15 @@ import type {
 } from "@/lib/types";
 import Header from "@/components/Header";
 import UploadZone from "@/components/UploadZone";
-import BulletCard from "@/components/BulletCard";
-import AnalystQuestionCard from "@/components/AnalystQuestionCard";
-import TrendGrid from "@/components/TrendGrid";
-import BriefingHistory from "@/components/BriefingHistory";
+import HistoryPanel from "@/components/HistoryPanel";
 import LoadingState from "@/components/LoadingState";
+import FlashReportsTab from "@/components/tabs/FlashReportsTab";
+import EarningsWarRoomTab from "@/components/tabs/EarningsWarRoomTab";
+import SecFilingsTab from "@/components/tabs/SecFilingsTab";
+import PreCallWarRoomTab from "@/components/tabs/PreCallWarRoomTab";
+import InvestorIntelTab from "@/components/tabs/InvestorIntelTab";
+import MarketPulseTab from "@/components/tabs/MarketPulseTab";
+import PostCallDebriefTab from "@/components/tabs/PostCallDebriefTab";
 import { parseFileClient } from "@/lib/client-parser";
 
 export default function Home() {
@@ -34,13 +38,15 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisPhase, setAnalysisPhase] = useState("");
   const [briefing, setBriefing] = useState<BriefingData | null>(null);
+  const [briefingId, setBriefingId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<QuestionsData | null>(null);
   const [trends, setTrends] = useState<TrendsData | null>(null);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<ActiveTab>("briefing");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("flash");
   const [copied, setCopied] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Parse files client-side — no server upload needed, avoids Vercel 413 limits
+  // Parse files client-side
   const handleUpload = useCallback(async (files: FileList | File[]) => {
     setUploading(true);
     setError("");
@@ -64,11 +70,12 @@ export default function Home() {
     setUploading(false);
   }, []);
 
-  // Stream analysis results via SSE — results appear live as each phase completes
+  // Stream analysis results via SSE
   const runAnalysis = async () => {
     setAnalyzing(true);
     setError("");
     setBriefing(null);
+    setBriefingId(null);
     setQuestions(null);
     setTrends(null);
 
@@ -120,7 +127,8 @@ export default function Home() {
                 break;
               case "briefing":
                 setBriefing(event.data);
-                setActiveTab("briefing");
+                if (event.briefing_id) setBriefingId(event.briefing_id);
+                setActiveTab("flash");
                 break;
               case "questions":
                 setQuestions(event.data);
@@ -132,6 +140,7 @@ export default function Home() {
                 setError(event.message || "Analysis failed");
                 break;
               case "done":
+                if (event.metadata?.briefing_id) setBriefingId(event.metadata.briefing_id);
                 break;
             }
           } catch {
@@ -166,17 +175,18 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const loadBriefing = async (briefingId: string) => {
+  const loadBriefing = async (loadBriefingId: string) => {
     setAnalyzing(true);
     setAnalysisPhase("Loading briefing...");
     try {
-      const res = await fetch(`/api/briefings/${briefingId}`);
+      const res = await fetch(`/api/briefings/${loadBriefingId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       if (data.briefing) setBriefing(data.briefing);
       if (data.questions) setQuestions(data.questions);
       if (data.trends) setTrends(data.trends);
-      setActiveTab("briefing");
+      if (data.briefing_id) setBriefingId(data.briefing_id);
+      setActiveTab("flash");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load briefing");
     } finally {
@@ -187,10 +197,11 @@ export default function Home() {
 
   const resetAll = () => {
     setBriefing(null);
+    setBriefingId(null);
     setQuestions(null);
     setTrends(null);
     setDocuments([]);
-    setActiveTab("briefing");
+    setActiveTab("flash");
   };
 
   const formatBytes = (b: number) => {
@@ -208,9 +219,8 @@ export default function Home() {
           onTabChange={setActiveTab}
           onCopy={copyBriefing}
           onNewAnalysis={resetAll}
+          onHistoryToggle={() => setHistoryOpen(!historyOpen)}
           copied={copied}
-          hasQuestions={!!questions}
-          hasTrends={!!trends}
         />
 
         <main className="max-w-4xl mx-auto px-6 pt-16 pb-24">
@@ -302,6 +312,12 @@ export default function Home() {
             </div>
           )}
         </main>
+
+        <HistoryPanel
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          onSelect={loadBriefing}
+        />
       </div>
     );
   }
@@ -315,9 +331,8 @@ export default function Home() {
         onTabChange={setActiveTab}
         onCopy={copyBriefing}
         onNewAnalysis={resetAll}
+        onHistoryToggle={() => setHistoryOpen(!historyOpen)}
         copied={copied}
-        hasQuestions={!!questions}
-        hasTrends={!!trends}
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -336,63 +351,28 @@ export default function Home() {
           </div>
         )}
 
-        {/* Briefing Tab */}
-        {activeTab === "briefing" && briefing && (
-          <div className="animate-fade-in">
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-gold/[0.06] to-transparent border border-gold/10 mb-8">
-              <h3 className="text-xs uppercase tracking-widest text-gold/60 font-body font-semibold mb-3">
-                Executive Summary
-              </h3>
-              <p className="text-white/80 font-body leading-relaxed text-[15px]">
-                {briefing.executive_summary}
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {briefing.bullets
-                .sort((a, b) => a.rank - b.rank)
-                .map((bullet, i) => (
-                  <BulletCard key={i} bullet={bullet} index={i} />
-                ))}
-            </div>
-          </div>
+        {/* Tab content */}
+        {activeTab === "flash" && (
+          <FlashReportsTab briefing={briefing} analyzing={analyzing} />
         )}
 
-        {/* Waiting for briefing to stream in */}
-        {activeTab === "briefing" && !briefing && analyzing && (
-          <div className="flex items-center justify-center py-24">
-            <div className="text-center">
-              <Loader2 size={32} className="mx-auto text-gold spinner mb-4" />
-              <p className="text-white/40 font-body">Generating executive briefing...</p>
-            </div>
-          </div>
+        {activeTab === "earnings" && <EarningsWarRoomTab />}
+
+        {activeTab === "sec" && <SecFilingsTab />}
+
+        {activeTab === "precall" && (
+          <PreCallWarRoomTab
+            briefing={briefing}
+            questions={questions}
+            briefingId={briefingId}
+          />
         )}
 
-        {/* Analyst Questions Tab */}
-        {activeTab === "questions" && questions && (
-          <div className="animate-fade-in">
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/[0.06] to-transparent border border-amber-500/10 mb-8">
-              <h3 className="text-xs uppercase tracking-widest text-amber-400/60 font-body font-semibold mb-3">
-                Call Risk Assessment
-              </h3>
-              <p className="text-white/80 font-body leading-relaxed text-[15px]">
-                {questions.call_risk_assessment}
-              </p>
-            </div>
+        {activeTab === "investors" && <InvestorIntelTab />}
 
-            <div className="space-y-4">
-              {questions.predicted_questions.map((q, i) => (
-                <AnalystQuestionCard key={i} question={q} index={i} />
-              ))}
-            </div>
-          </div>
-        )}
+        {activeTab === "market" && <MarketPulseTab />}
 
-        {/* Trends Tab */}
-        {activeTab === "trends" && trends && <TrendGrid trends={trends} />}
-
-        {/* History Tab */}
-        {activeTab === "history" && <BriefingHistory onSelect={loadBriefing} />}
+        {activeTab === "postcall" && <PostCallDebriefTab />}
       </main>
 
       {/* Footer */}
@@ -401,6 +381,12 @@ export default function Home() {
           Alliance Resource Partners · Executive Intelligence System · Powered by Claude AI · Enterprise Data Security
         </p>
       </footer>
+
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onSelect={loadBriefing}
+      />
     </div>
   );
 }

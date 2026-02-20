@@ -7,6 +7,54 @@
     "src/app/api/analyze/route.ts": {
       "maxDuration": 120,
       "memory": 1024
+    },
+    "src/app/api/transcripts/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/transcripts/search/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/transcripts/compare/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/sec/fetch/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/sec/compare/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/precall/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/precall/competitors/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/investors/sentiment/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/market/prices/route.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
+    "src/app/api/market/regulatory/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/market/morning-briefing/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/postcall/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
     }
   }
 }
