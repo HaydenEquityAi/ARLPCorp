@@ -26,6 +26,7 @@ import AnalystQuestionCard from "@/components/AnalystQuestionCard";
 import TrendGrid from "@/components/TrendGrid";
 import BriefingHistory from "@/components/BriefingHistory";
 import LoadingState from "@/components/LoadingState";
+import { parseFileClient } from "@/lib/client-parser";
 
 export default function Home() {
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
@@ -39,25 +40,28 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("briefing");
   const [copied, setCopied] = useState(false);
 
+  // Parse files client-side — no server upload needed, avoids Vercel 413 limits
   const handleUpload = useCallback(async (files: FileList | File[]) => {
     setUploading(true);
     setError("");
-    const formData = new FormData();
-    Array.from(files).forEach((f) => formData.append("files", f));
+    const fileArray = Array.from(files);
+    const parsed: ParsedDocument[] = [];
+    const errors: string[] = [];
 
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setDocuments((prev) => [...prev, ...data.documents]);
-      if (data.errors?.length) {
-        setError(`Some files had issues: ${data.errors.map((e: { file: string }) => e.file).join(", ")}`);
+    for (const file of fileArray) {
+      try {
+        const doc = await parseFileClient(file);
+        parsed.push(doc);
+      } catch (err: unknown) {
+        errors.push(err instanceof Error ? `${file.name}: ${err.message}` : file.name);
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
     }
+
+    setDocuments((prev) => [...prev, ...parsed]);
+    if (errors.length) {
+      setError(`Some files had issues: ${errors.join(", ")}`);
+    }
+    setUploading(false);
   }, []);
 
   const runAnalysis = async () => {
