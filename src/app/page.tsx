@@ -64,6 +64,7 @@ export default function Home() {
     setUploading(false);
   }, []);
 
+  // Stream analysis results via SSE — results appear live as each phase completes
   const runAnalysis = async () => {
     setAnalyzing(true);
     setError("");
@@ -72,7 +73,7 @@ export default function Home() {
     setTrends(null);
 
     try {
-      setAnalysisPhase("Running materiality analysis across all documents...");
+      setAnalysisPhase("Connecting to analysis engine...");
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,13 +90,55 @@ export default function Home() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Server error: ${res.status}`);
+      }
 
-      if (data.briefing) setBriefing(data.briefing);
-      if (data.questions) setQuestions(data.questions);
-      if (data.trends) setTrends(data.trends);
-      setActiveTab("briefing");
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            switch (event.type) {
+              case "phase":
+                setAnalysisPhase(event.phase);
+                break;
+              case "briefing":
+                setBriefing(event.data);
+                setActiveTab("briefing");
+                break;
+              case "questions":
+                setQuestions(event.data);
+                break;
+              case "trends":
+                setTrends(event.data);
+                break;
+              case "error":
+                setError(event.message || "Analysis failed");
+                break;
+              case "done":
+                break;
+            }
+          } catch {
+            // Skip malformed events
+          }
+        }
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -156,13 +199,8 @@ export default function Home() {
     return (b / 1048576).toFixed(1) + " MB";
   };
 
-  // ─── Loading Overlay ───
-  if (analyzing) {
-    return <LoadingState phase={analysisPhase} />;
-  }
-
-  // ─── Upload View ───
-  if (!briefing) {
+  // ─── Upload View (no briefing yet and not analyzing) ───
+  if (!briefing && !analyzing) {
     return (
       <div className="min-h-screen relative z-10">
         <Header
@@ -268,7 +306,7 @@ export default function Home() {
     );
   }
 
-  // ─── Results View ───
+  // ─── Results View (or streaming in progress) ───
   return (
     <div className="min-h-screen relative z-10">
       <Header
@@ -283,6 +321,14 @@ export default function Home() {
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Streaming progress indicator */}
+        {analyzing && (
+          <div className="mb-6 p-4 rounded-xl bg-gold/[0.06] border border-gold/20 flex items-center gap-3 animate-fade-in">
+            <Loader2 size={18} className="text-gold spinner shrink-0" />
+            <p className="text-gold/80 text-sm font-body">{analysisPhase}</p>
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
             <AlertTriangle size={18} className="text-red-400 mt-0.5 shrink-0" />
@@ -291,7 +337,7 @@ export default function Home() {
         )}
 
         {/* Briefing Tab */}
-        {activeTab === "briefing" && (
+        {activeTab === "briefing" && briefing && (
           <div className="animate-fade-in">
             <div className="p-6 rounded-2xl bg-gradient-to-br from-gold/[0.06] to-transparent border border-gold/10 mb-8">
               <h3 className="text-xs uppercase tracking-widest text-gold/60 font-body font-semibold mb-3">
@@ -308,6 +354,16 @@ export default function Home() {
                 .map((bullet, i) => (
                   <BulletCard key={i} bullet={bullet} index={i} />
                 ))}
+            </div>
+          </div>
+        )}
+
+        {/* Waiting for briefing to stream in */}
+        {activeTab === "briefing" && !briefing && analyzing && (
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center">
+              <Loader2 size={32} className="mx-auto text-gold spinner mb-4" />
+              <p className="text-white/40 font-body">Generating executive briefing...</p>
             </div>
           </div>
         )}

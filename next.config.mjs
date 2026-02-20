@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ["pdf-parse"],
+    serverComponentsExternalPackages: [
+      "pdf-parse",
+      "@xenova/transformers",
+      "onnxruntime-node",
+    ],
     serverActions: {
       bodySizeLimit: "50mb",
     },
